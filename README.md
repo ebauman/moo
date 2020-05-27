@@ -7,6 +7,8 @@ but still have it register in Kubernetes.
 
 # Usage
 
+## Standalone
+
 ```text
 NAME:
    moo - Auto-registration agent for Rancher imported clusters
@@ -33,6 +35,13 @@ GLOBAL OPTIONS:
    --help, -h                  show help (default: false)
 
 ```
+
+## Kubernetes Cluster
+
+Check out [kubernetes.yaml](package/kubernetes.yaml) for a manifest to deploy `moo-agent` into your cluster. 
+
+If you're using k3s, this manifest can be placed in `/var/lib/rancher/k3s/server/manifests` which will auto-deploy
+the `moo-agent` Deployment upon server installation. 
 
 
 # Building
