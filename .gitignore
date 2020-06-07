@@ -1,0 +1,12 @@
+*.swp
+/.dapper
+/.idea
+/.trash-cache
+/.vagrant
+/*.log
+/bin
+/build
+/data-dir
+/dist
+main
+*.pem
