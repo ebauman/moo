@@ -169,7 +169,7 @@ func run(ctx *cli.Context) error {
 
 	cfg.Rancher = rancherClient
 
-	// run the reconciliation loop
+	// run the reconciliation
 
 	reconcile.Reconcile(cfg)
 
