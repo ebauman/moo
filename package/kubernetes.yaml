@@ -38,24 +38,20 @@ subjects:
     name: moo-agent
     namespace: moo-agent
 ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
   name: moo-agent
   namespace: moo-agent
 spec:
-  selector:
-    matchLabels:
-      app: moo-agent
+  backoffLimit: 3
   template:
-    metadata:
-      labels:
-        app: moo-agent
     spec:
       serviceAccountName: moo-agent
+      restartPolicy: Never
       containers:
         - name: moo-agent
-          image: ebauman/moo-agent:v0.0.1
+          image: ebauman/moo-agent:v0.0.2
           env:
             - name: RANCHER_URL
               value: ""
