@@ -8,7 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type Config struct {
+type AgentConfig struct {
 	KubeConfig string
 
 	Kubernetes *kubernetes.Clientset
@@ -37,4 +37,8 @@ type RancherConfig struct {
 	SecretKey string
 	Insecure bool
 	CACerts string
+}
+
+type ServerConfig struct {
+	RancherConfig
 }

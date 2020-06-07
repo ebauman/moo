@@ -57,7 +57,7 @@ func BuildClients(path string) (*kubernetes.Clientset, dynamic.Interface, error)
 	return k8sClient, dynamicClient, nil
 }
 
-func CheckForNamespace(config *config.Config) (bool, error) {
+func CheckForNamespace(config *config.AgentConfig) (bool, error) {
 	obj, err := config.Kubernetes.CoreV1().Namespaces().Get(config.Context, config.Namespace, v1.GetOptions{})
 	if errors.IsNotFound(err) {
 		config.Log.Debugf("did not find namespace %s", config.Namespace)
@@ -77,7 +77,7 @@ func CheckForNamespace(config *config.Config) (bool, error) {
 	return false, nil
 }
 
-func CheckForDeployment(config *config.Config) (bool, error) {
+func CheckForDeployment(config *config.AgentConfig) (bool, error) {
 	obj, err := config.Kubernetes.AppsV1().Deployments(config.Namespace).Get(config.Context, config.Deployment, v1.GetOptions{})
 
 	if errors.IsNotFound(err) {
@@ -98,7 +98,7 @@ func CheckForDeployment(config *config.Config) (bool, error) {
 	return false, nil
 }
 
-func CheckForDaemonset(config *config.Config) (bool, error) {
+func CheckForDaemonset(config *config.AgentConfig) (bool, error) {
 	obj, err := config.Kubernetes.AppsV1().DaemonSets(config.Namespace).Get(config.Context, config.Daemonset, v1.GetOptions{})
 	if errors.IsNotFound(err) {
 		config.Log.Debugf("did not find daemonset %s in namespace %s", config.Daemonset, config.Namespace)
@@ -118,7 +118,7 @@ func CheckForDaemonset(config *config.Config) (bool, error) {
 	return false, nil
 }
 
-func createObject(config *config.Config, yaml []byte) error {
+func createObject(config *config.AgentConfig, yaml []byte) error {
 	obj := &unstructured.Unstructured{}
 
 	dec := yaml2.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
@@ -162,7 +162,7 @@ func findGVR(gvk *schema.GroupVersionKind, dc *discovery.DiscoveryClient) (*meta
 	return mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 }
 
-func ApplyManifest(config *config.Config, manifest []byte) error {
+func ApplyManifest(config *config.AgentConfig, manifest []byte) error {
 	var err error
 	// generate chunks from the manifest
 	yamls := yamlSplit(manifest)

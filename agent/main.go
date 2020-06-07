@@ -97,8 +97,8 @@ func main() {
 	}
 }
 
-func buildConfigFromFlags(ctx *cli.Context) *config.Config {
-	cfg := &config.Config{}
+func buildConfigFromFlags(ctx *cli.Context) *config.AgentConfig {
+	cfg := &config.AgentConfig{}
 
 	cfg.KubeConfig = ctx.String("kubeconfig")
 

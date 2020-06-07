@@ -16,7 +16,7 @@ const (
 	rancher2RetriesWait = 5
 )
 
-func BuildClient(config *config.Config) (*managementClient.Client, error) {
+func BuildClient(config *config.AgentConfig) (*managementClient.Client, error) {
 	clientOpts := buildConfig(config)
 
 	err := isRancherReady(config)
@@ -32,7 +32,7 @@ func BuildClient(config *config.Config) (*managementClient.Client, error) {
 	return mClient, nil
 }
 
-func CheckForCluster(config *config.Config) (*managementClient.Cluster, error) {
+func CheckForCluster(config *config.AgentConfig) (*managementClient.Cluster, error) {
 	// check for the existence of named cluster
 	filters := map[string]interface{}{}
 	filters["name"] = config.ClusterName
@@ -52,7 +52,7 @@ func CheckForCluster(config *config.Config) (*managementClient.Cluster, error) {
 	return nil, nil // we did not find a cluster with this name
 }
 
-func RegisterCluster(config *config.Config) (*managementClient.Cluster, error) {
+func RegisterCluster(config *config.AgentConfig) (*managementClient.Cluster, error) {
 	// create a new cluster
 	cluster := &managementClient.Cluster{}
 
@@ -71,7 +71,7 @@ func RegisterCluster(config *config.Config) (*managementClient.Cluster, error) {
 	return created, nil
 }
 
-func GetYAMLManifestForCluster(cluster *managementClient.Cluster, config *config.Config) ([]byte, error) {
+func GetYAMLManifestForCluster(cluster *managementClient.Cluster, config *config.AgentConfig) ([]byte, error) {
 	token, err := config.Rancher.ClusterRegistrationToken.Create(&managementClient.ClusterRegistrationToken{
 		ClusterID: cluster.ID,
 	})
@@ -88,7 +88,7 @@ func GetYAMLManifestForCluster(cluster *managementClient.Cluster, config *config
 	return manifest, nil
 }
 
-func buildConfig(config *config.Config) *clientbase.ClientOpts {
+func buildConfig(config *config.AgentConfig) *clientbase.ClientOpts {
 	log.Debugf("building clientopts")
 	log.Debugf("url: %s", config.URL)
 	log.Debugf("tokenkey: %s", createTokenKey(config.AccessKey, config.SecretKey))
@@ -106,7 +106,7 @@ func createTokenKey(access string, secret string) string {
 	return fmt.Sprintf("%s:%s", access, secret)
 }
 
-func isRancherReady(config *config.Config) error {
+func isRancherReady(config *config.AgentConfig) error {
 	var err error
 	var resp []byte
 	url := rancher2.RootURL(config.URL) + "/ping"

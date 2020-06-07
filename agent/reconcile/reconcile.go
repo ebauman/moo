@@ -13,7 +13,7 @@ const (
 	Registered   RegistrationStatus = "Registered"
 )
 
-func Reconcile(config *config.Config) {
+func Reconcile(config *config.AgentConfig) {
 	config.Log.Debugf("starting cluster registration")
 	var registrationStatus RegistrationStatus
 
@@ -68,7 +68,7 @@ func Reconcile(config *config.Config) {
 	config.Log.Info("cluster registered successfully")
 }
 
-func checkRegistration(config *config.Config) RegistrationStatus {
+func checkRegistration(config *config.AgentConfig) RegistrationStatus {
 	config.Log.Debugf("checking cluster registration status")
 	// check if our cluster is registered or not.
 	// registration is achieved when three things occur:
