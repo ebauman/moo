@@ -41,7 +41,7 @@ GLOBAL OPTIONS:
 Check out [kubernetes.yaml](package/kubernetes.yaml) for a manifest to deploy `moo-agent` into your cluster. 
 
 If you're using k3s, this manifest can be placed in `/var/lib/rancher/k3s/server/manifests` which will auto-deploy
-the `moo-agent` Deployment upon server installation. 
+the `moo-agent` Job upon server installation. 
 
 
 # Building
