@@ -54,10 +54,10 @@ spec:
           image: ebauman/moo-agent:v0.1.0
           env:
             - name: RANCHER_URL
-              value: "https://demo-hosted.rancher.cloud/v3"
+              value: ""
             - name: RANCHER_ACCESS_KEY
-              value: "token-rst4r"
+              value: ""
             - name: RANCHER_SECRET_KEY
-              value: "52skmn9s8bwjg4hddj7qlmsbsgp29nrg8qm8wnpgf2lgjgs5c78g6w"
+              value: ""
             - name: MOO_CLUSTER_NAME
-              value: "moo-testing"
+              value: ""
