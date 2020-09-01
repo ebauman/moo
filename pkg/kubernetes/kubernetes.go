@@ -1,7 +1,7 @@
 package kubernetes
 
 import (
-	"github.com/ebauman/moo/pkg/config"
+	"context"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -24,101 +24,117 @@ const (
 	APIRateLimitMilliseconds = 3000 // how many ms to wait between k8s api calls, helps avoid server-side throttling
 )
 
-func BuildClients(path string) (*kubernetes.Clientset, dynamic.Interface, error) {
+type KubernetesClient struct {
+	clientset *kubernetes.Clientset
+	dynamic dynamic.Interface
+	context context.Context
+
+	log *log.Logger
+}
+
+func NewClient(path string, log *log.Logger, context context.Context) (*KubernetesClient, error) {
 	var cfg *rest.Config
 	var err error
 
 	if path == "" {
 		// we are in-cluster
-		log.Info("building client from in-cluster cfg")
+		log.Info("building client from in-cluster config")
 		cfg, err = rest.InClusterConfig()
 	} else {
-		log.Info("building client from cfg file")
+		log.Infof("building client from config file %s", path)
 		cfg, err = clientcmd.BuildConfigFromFlags("", path)
 	}
 
 	if err != nil {
-		log.Errorf("error building kubernetes cfg: %v", err)
-		return nil, nil, err
+		log.Errorf("error building kubernetes config: %v", err)
+		return nil, err
 	}
+
+	cfg.QPS = 100
+	cfg.Burst = 100
 
 	k8sClient, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		log.Errorf("error building kubernetes client: %v", err)
-		return nil, nil, err
+		log.Errorf("error building kubernetes config: %v", err)
+		return nil, err
 	}
 
 	dynamicClient, err := dynamic.NewForConfig(cfg)
 	if err != nil {
-		log.Errorf("error building dynamic client: %v", err)
-		return nil, nil, err
+		log.Errorf("error building kubernetes config: %v", err)
+		return nil, err
 	}
 
-	return k8sClient, dynamicClient, nil
+	return &KubernetesClient{
+		k8sClient,
+		dynamicClient,
+		context,
+		log,
+	}, nil
 }
 
-func CheckForNamespace(config *config.AgentConfig) (bool, error) {
-	obj, err := config.Kubernetes.CoreV1().Namespaces().Get(config.Context, config.Namespace, v1.GetOptions{})
+func (kc *KubernetesClient) CheckForNamespace(namespace string) (bool, error) {
+	obj, err := kc.clientset.CoreV1().Namespaces().Get(kc.context, namespace, v1.GetOptions{})
 	if errors.IsNotFound(err) {
-		config.Log.Debugf("did not find namespace %s", config.Namespace)
+		kc.log.Debugf("did not find namespace %s", namespace)
 		return false, nil
 	}
 
 	if err != nil {
-		config.Log.Debugf("error retrieving namespace: %v", err)
+		kc.log.Debugf("error retrieving namespace: %v", err)
 		return false, err
 	}
 
-	if obj.Name == config.Namespace {
-		config.Log.Debugf("successfully found namespace %s", config.Namespace)
+	if obj.Name == namespace {
+		kc.log.Debugf("successfully found namespace %s", namespace)
 		return true, nil
 	}
 
 	return false, nil
 }
 
-func CheckForDeployment(config *config.AgentConfig) (bool, error) {
-	obj, err := config.Kubernetes.AppsV1().Deployments(config.Namespace).Get(config.Context, config.Deployment, v1.GetOptions{})
+func (kc *KubernetesClient) CheckForDeployment(namespace string, deployment string) (bool, error) {
+	obj, err := kc.clientset.AppsV1().Deployments(namespace).Get(kc.context, deployment, v1.GetOptions{})
 
 	if errors.IsNotFound(err) {
-		config.Log.Debugf("did not find deployment %s in namespace %s", config.Deployment, config.Namespace)
+		kc.log.Debugf("did not find deployment %s in namespace %s", deployment, namespace)
 		return false, nil
 	}
 
 	if err != nil {
-		config.Log.Debugf("error retrieving deployment %s in namespace %s: %v", config.Deployment, config.Namespace, err)
+		kc.log.Debugf("error retrieving deployment %s in namespace %s: %v", deployment, namespace, err)
 		return false, err
 	}
 
-	if obj.Name == config.Deployment {
-		config.Log.Debugf("successfully found deployment %s in namespace %s", config.Deployment, config.Namespace)
+	if obj.Name == deployment {
+		kc.log.Debugf("successfully found deployment %s in namespace %s", deployment, namespace)
 		return true, nil
 	}
 
 	return false, nil
 }
 
-func CheckForDaemonset(config *config.AgentConfig) (bool, error) {
-	obj, err := config.Kubernetes.AppsV1().DaemonSets(config.Namespace).Get(config.Context, config.Daemonset, v1.GetOptions{})
+func (kc *KubernetesClient) CheckForDaemonset(namespace string, daemonset string) (bool, error) {
+	obj, err := kc.clientset.AppsV1().DaemonSets(namespace).Get(kc.context, daemonset, v1.GetOptions{})
 	if errors.IsNotFound(err) {
-		config.Log.Debugf("did not find daemonset %s in namespace %s", config.Daemonset, config.Namespace)
+		kc.log.Debugf("did not find daemonset %s in namespace %s", daemonset, namespace)
 		return false, nil
 	}
 
 	if err != nil {
-		config.Log.Debugf("error retrieving daemonset %s in namespace %s: %v", config.Daemonset, config.Namespace, err)
+		kc.log.Debugf("error retrieving daemonset %s in namespace %s: %v", daemonset, namespace, err)
 		return false, err
 	}
 
-	if obj.Name == config.Daemonset {
-		config.Log.Debugf("successfully found daemonset %s in namespace %s", config.Daemonset, config.Namespace)
+	if obj.Name == daemonset {
+		kc.log.Debugf("successfully found daemonset %s in namespace %s", daemonset, namespace)
 		return true, nil
 	}
 
 	return false, nil
 }
 
-func createObject(config *config.AgentConfig, yaml []byte) error {
+func (kc *KubernetesClient) createObject(yaml []byte) error {
 	obj := &unstructured.Unstructured{}
 
 	dec := yaml2.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
@@ -128,7 +144,7 @@ func createObject(config *config.AgentConfig, yaml []byte) error {
 		return err
 	}
 
-	mapping, err := findGVR(gvk, config.Kubernetes.DiscoveryClient)
+	mapping, err := findGVR(gvk, kc.clientset.DiscoveryClient)
 
 	if err != nil {
 		return err
@@ -138,17 +154,17 @@ func createObject(config *config.AgentConfig, yaml []byte) error {
 	var dr dynamic.ResourceInterface
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
 		// for namespaced resources
-		dr = config.Dynamic.Resource(mapping.Resource).Namespace(obj.GetNamespace())
+		dr = kc.dynamic.Resource(mapping.Resource).Namespace(obj.GetNamespace())
 	} else {
 		// for cluster-wide resources
-		dr = config.Dynamic.Resource(mapping.Resource)
+		dr = kc.dynamic.Resource(mapping.Resource)
 	}
 
 	// create
-	_, err = dr.Create(config.Context, obj, v1.CreateOptions{})
+	_, err = dr.Create(kc.context, obj, v1.CreateOptions{})
 
 	if errors.IsAlreadyExists(err) {
-		config.Log.Debugf("object %s already exists", obj.GetName())
+		kc.log.Debugf("object %s already exists", obj.GetName())
 		return nil
 	}
 
@@ -162,19 +178,19 @@ func findGVR(gvk *schema.GroupVersionKind, dc *discovery.DiscoveryClient) (*meta
 	return mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 }
 
-func ApplyManifest(config *config.AgentConfig, manifest []byte) error {
+func (kc *KubernetesClient) ApplyManifest(manifest []byte) error {
 	var err error
 	// generate chunks from the manifest
 	yamls := yamlSplit(manifest)
 
-	limiter := time.Tick(APIRateLimitMilliseconds * time.Millisecond)
+	limiter := time.Tick(APIRateLimitMilliseconds * time.Millisecond) // TODO - is this needed? see quota increases
 
 	for _, y := range yamls {
 		<-limiter
-		err = createObject(config, y)
+		err = kc.createObject(y)
 
 		if err != nil {
-			config.Log.Errorf("error creating object in kubernetes: %v", err)
+			kc.log.Errorf("error creating object in kubernetes: %v", err)
 		}
 	}
 

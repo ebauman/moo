@@ -3,14 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/ebauman/moo/agent/reconcile"
+	agent "github.com/ebauman/moo/pkg/agent"
 	"github.com/ebauman/moo/pkg/config"
 	"github.com/ebauman/moo/pkg/kubernetes"
+	mooLogger "github.com/ebauman/moo/pkg/logger"
 	"github.com/ebauman/moo/pkg/rancher"
+	"github.com/ebauman/moo/pkg/rpc"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
+	"google.golang.org/grpc"
 	"os"
 )
+
+var logger *log.Logger
 
 func main() {
 	app := &cli.App{
@@ -45,19 +50,16 @@ func main() {
 				Name: "rancher-url",
 				Usage:  "url of rancher instance",
 				EnvVars: []string{"RANCHER_URL"},
-				Required: true,
 			},
 			&cli.StringFlag{
 				Name: "rancher-access-key",
 				Usage: "access key for rancher",
 				EnvVars: []string{"RANCHER_ACCESS_KEY"},
-				Required: true,
 			},
 			&cli.StringFlag{
 				Name: "rancher-secret-key",
 				Usage: "secret key for rancher",
 				EnvVars: []string{"RANCHER_SECRET_KEY"},
-				Required: true,
 			},
 			&cli.StringFlag{
 				Name: "cluster-name",
@@ -75,6 +77,12 @@ func main() {
 				Name: "rancher-cacerts",
 				Usage: "path to cacerts file used when connecting to rancher",
 				EnvVars: []string{"RANCHER_CA_CERTS"},
+			},
+			&cli.StringFlag{
+				Name: "moo-server",
+				Usage: "hostname for moo server. specifying this will enable server mode",
+				Value: "",
+				EnvVars: []string{"MOO_SERVER"},
 			},
 			&cli.StringFlag {
 				Name: "loglevel",
@@ -97,6 +105,18 @@ func main() {
 	}
 }
 
+func getLogger(ctx *cli.Context) *log.Logger {
+	if logger != nil {
+		return logger
+	}
+	
+	logger = mooLogger.BuildLogger(ctx.String("loglevel"))
+
+	return logger
+}
+
+
+
 func buildConfigFromFlags(ctx *cli.Context) *config.AgentConfig {
 	cfg := &config.AgentConfig{}
 
@@ -113,35 +133,7 @@ func buildConfigFromFlags(ctx *cli.Context) *config.AgentConfig {
 	cfg.CACerts = ctx.String("rancher-cacerts")
 	cfg.Insecure = ctx.Bool("rancher-insecure")
 	cfg.UseExisting = ctx.Bool("use-existing-cluster")
-
-	cfg.Log = log.New()
-
-	// TODO - this sucks
-	switch ctx.String("loglevel") {
-	case "trace":
-		cfg.Log.SetLevel(log.TraceLevel)
-		break
-	case "debug":
-		cfg.Log.SetLevel(log.DebugLevel)
-		break
-	case "info":
-		cfg.Log.SetLevel(log.InfoLevel)
-		break
-	case "warning":
-		cfg.Log.SetLevel(log.WarnLevel)
-		break
-	case "error":
-		cfg.Log.SetLevel(log.ErrorLevel)
-		break
-	case "fatal":
-		cfg.Log.SetLevel(log.FatalLevel)
-		break
-	case "panic":
-		cfg.Log.SetLevel(log.PanicLevel)
-		break
-	default:
-		cfg.Log.SetLevel(log.InfoLevel)
-	}
+	cfg.ServerHostname = ctx.String("moo-server")
 
 	return cfg
 }
@@ -150,29 +142,43 @@ func run(ctx *cli.Context) error {
 	// using the ctx, build a context and related items.
 
 	cfg := buildConfigFromFlags(ctx)
+	appContext := context.Background()
+	logger := getLogger(ctx)
 
-	cfg.Context = context.Background()
-
-	k8sClient, dynClient, err := kubernetes.BuildClients(cfg.KubeConfig)
+	if ((cfg.URL == "" || cfg.AccessKey == "" || cfg.SecretKey == "") && cfg.ServerHostname == "") || cfg.ServerHostname == "" {
+		logger.Fatalf("--moo-server or all of {--rancher-url, --rancher-access-key, --rancher-secret-key} required")
+	}
+	
+	k8sClient, err := kubernetes.NewClient(cfg.KubeConfig, logger, appContext)
 	if err != nil {
 		return fmt.Errorf("error building kubernetes client: %v", err)
 	}
 
-	cfg.Kubernetes = k8sClient
-	cfg.Dynamic = dynClient
+	var ag *agent.Agent
+	if cfg.ServerHostname != "" {
+		// running in server mode
+		conn, err := grpc.Dial(cfg.ServerHostname, grpc.WithInsecure()) // TODO - figure out authentication
+		if err != nil {
+			logger.Fatalf("error dialing moo server: %v", err)
+		}
+		defer conn.Close()
 
-	rancherClient, err := rancher.BuildClient(cfg)
+		mooClient := rpc.NewMooClient(conn)
 
-	if err != nil {
-		return fmt.Errorf("error building rancher client: %v", err)
+		ag = agent.NewServerAgent(cfg, k8sClient, mooClient, appContext, logger)
+
+		ag.ServerReconcile()
+	} else {
+		rancherClient, err := rancher.NewServer(&cfg.RancherConfig)
+
+		if err != nil {
+			return fmt.Errorf("error building rancher client: %v", err)
+		}
+
+		ag = agent.NewAgent(cfg, k8sClient, rancherClient, appContext, logger)
+
+		ag.StandaloneReconcile()
 	}
-
-	cfg.Rancher = rancherClient
-
-	// run the reconciliation
-
-	reconcile.Reconcile(cfg)
-
 
 	return nil
 }

@@ -51,13 +51,13 @@ spec:
       restartPolicy: Never
       containers:
         - name: moo-agent
-          image: ebauman/moo-agent:v0.0.2
+          image: ebauman/moo-agent:v0.1.0
           env:
             - name: RANCHER_URL
-              value: ""
+              value: "https://demo-hosted.rancher.cloud/v3"
             - name: RANCHER_ACCESS_KEY
-              value: ""
+              value: "token-rst4r"
             - name: RANCHER_SECRET_KEY
-              value: ""
+              value: "52skmn9s8bwjg4hddj7qlmsbsgp29nrg8qm8wnpgf2lgjgs5c78g6w"
             - name: MOO_CLUSTER_NAME
-              value: ""
+              value: "moo-testing"

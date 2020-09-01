@@ -1,125 +1,222 @@
 package server
 
-import "github.com/ebauman/moo/pkg/agent"
+import (
+	"context"
+	"fmt"
+	"github.com/ebauman/moo/pkg/agentstore"
+	"github.com/ebauman/moo/pkg/config"
+	"github.com/ebauman/moo/pkg/rancher"
+	"github.com/ebauman/moo/pkg/rpc"
+	"github.com/ebauman/moo/pkg/rulestore"
+	"github.com/ebauman/moo/pkg/types"
+	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+	"regexp"
+	"sync"
+	"time"
+)
 
 type Server struct {
-	agents map[string]*agent.Agent
-
-	accepted map[string]*agent.Agent
-	pending  map[string]*agent.Agent
-	held     map[string]*agent.Agent
-	denied   map[string]*agent.Agent
-	error  map[string]*agent.Agent
+	config     *config.ServerConfig
+	rancher    *rancher.RancherServer
+	agentStore *agentstore.Store
+	ruleStore  *rulestore.Store
+	log        *log.Logger
 }
 
-func New() *Server {
-	return &Server{
-		accepted: map[string]*agent.Agent{},
-		pending:  map[string]*agent.Agent{},
-		held:     map[string]*agent.Agent{},
-		denied:   map[string]*agent.Agent{},
-		error:    map[string]*agent.Agent{},
+func NewServer(config *config.ServerConfig, rancher *rancher.RancherServer, log *log.Logger, rpcServ *grpc.Server) *Server {
+	agentStore := agentstore.NewStore()
+	ruleStore := rulestore.NewStore()
+	serv := &Server{
+		config:     config,
+		rancher:    rancher,
+		agentStore: agentStore,
+		ruleStore:  ruleStore,
+		log:        log,
+	}
+	rpc.RegisterMooServer(rpcServ, serv)
+	rpc.RegisterRulesServer(rpcServ, serv)
+
+	return serv
+}
+
+func (s *Server) Run(wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for {
+		s.applyRules()
+		s.registerClusters()
+
+		time.Sleep(time.Second * 30) // TODO - make this configurable
 	}
 }
 
-func (s *Server) AddAgent(a *agent.Agent) {
-	s.agents[a.ID] = a
+// accepted clusters shall be registered
+func (s *Server) registerClusters() {
+	accepted := s.agentStore.ListAgentsByStatus(types.StatusAccepted)
+	for _, v := range accepted {
+		err := s.registerAgent(v)
+		if err != nil {
+			v.StatusMessage = fmt.Sprintf("error registering agent: %v", err)
+			v.Status = types.StatusError
+			s.agentStore.UpdateAgent(v)
+			continue
+		}
+	}
+}
 
-	switch a.Status{
-	case agent.StatusAccepted:
-		s.accepted[a.ID] = a
-		break
-	case agent.StatusHeld:
-		s.held[a.ID] = a
-		break
-	case agent.StatusPending:
-		s.pending[a.ID] = a
-		break
-	case agent.StatusError:
-		s.error[a.ID] = a
-		break
-	case agent.StatusDenied:
-		fallthrough
+func (s *Server) applyRules() {
+	s.log.Tracef("applying rules")
+	// go through all the pending agents and apply rules accordingly
+	pending := s.agentStore.ListAgentsByStatus(types.StatusPending)
+	s.log.Tracef("listed pending agents, quantity %d", len(pending))
+	rules := s.ruleStore.ListRules()
+	s.log.Tracef("listed rules, quantity %d", len(rules))
+
+	for _, a := range pending {
+		for _, r := range rules {
+			// if rule applies, then perform action
+			if s.evalRule(a, r) {
+				s.log.Tracef("rule match found, updating agent status to %s", r.Action)
+				switch r.Action{
+				case types.Accept:
+					a.Status = types.StatusAccepted
+				case types.Hold:
+					a.Status = types.StatusHeld
+				case types.Deny:
+					a.Status = types.StatusDenied
+				}
+				s.agentStore.UpdateAgent(a)
+				break
+			}
+		}
+	}
+
+	s.log.Tracef("finished applying rules")
+}
+
+func (s *Server) evalRule(a *types.Agent, r types.Rule) bool {
+	s.log.Tracef("evaluating rule (type: %s) (action: %s) (priority: %d) (regex: %s) for agent id %s", r.Type, r.Action, r.Priority, r.Regex, a.ID)
+	regex := regexp.MustCompile(r.Regex)
+	switch r.Type {
+	case types.SharedSecret:
+		return regex.Match([]byte(a.Secret))
+	case types.SourceIP:
+		return regex.Match([]byte(a.IP))
+	case types.ClusterName:
+		return regex.Match([]byte(a.ClusterName))
+	case types.All:
+		return true
+	}
+
+	return false
+}
+
+func (s *Server) registerAgent(a *types.Agent) error {
+	manifest, err := s.rancher.ReconcileToURL(a.ClusterName, a.UseExisting)
+	if err != nil {
+		return err
+	}
+
+	a.ManifestUrl = manifest
+	a.Status = types.StatusAccepted
+	a.StatusMessage = "agent accepted"
+	s.agentStore.UpdateAgent(a)
+
+	return nil
+}
+
+func convertRpcStatus(s types.Status) rpc.Status {
+	switch s {
+	case types.StatusUnknown:
+		return rpc.Status_Unknown
+	case types.StatusError:
+		return rpc.Status_Error
+	case types.StatusAccepted:
+		return rpc.Status_Accepted
+	case types.StatusDenied:
+		return rpc.Status_Denied
+	case types.StatusHeld:
+		return rpc.Status_Held
+	case types.StatusPending:
+		return rpc.Status_Pending
 	default:
-		s.denied[a.ID] = a
-		break
+		return rpc.Status_Unknown
 	}
 }
 
-func (s *Server) GetAgent(id string) *agent.Agent {
-	return s.agents[id]
-}
+func (s *Server) GetAgentStatus(ctx context.Context, id *rpc.AgentID) (*rpc.StatusResponse, error) {
+	agent := s.agentStore.GetAgent(id.GetID())
 
-func (s *Server) ListAgents() []*agent.Agent {
-	agents := make([]*agent.Agent, 0)
-	for _, v := range s.agents {
-		agents = append(agents, v)
+	resp := &rpc.StatusResponse{}
+
+	if agent == nil {
+		resp.Status = rpc.Status_Unknown
+		resp.Message = ""
+	} else {
+		resp.Status = convertRpcStatus(agent.Status)
+		resp.Message = agent.StatusMessage
 	}
 
-	return agents
+	resp.ErrorTime = s.config.ErrorTime
+	resp.PendingTime = s.config.PendingTime
+	resp.ErrorTime = s.config.ErrorTime
+
+	return resp, nil
 }
 
-func (s *Server) ListAgentsByStatus(status agent.Status) []*agent.Agent {
-	agents := make([]*agent.Agent, 0)
-
-	var m map[string]*agent.Agent
-
-	switch status {
-	case agent.StatusPending:
-		m = s.pending
-		break
-	case agent.StatusAccepted:
-		m = s.accepted
-		break
-	case agent.StatusError:
-		m = s.error
-		break
-	case agent.StatusDenied:
-		m = s.denied
-		break
-	case agent.StatusHeld:
-		m = s.held
-		break
+func (s *Server) RegisterAgent(ctx context.Context, a *rpc.Agent) (*rpc.RegisterResponse, error) {
+	agent := &types.Agent{
+		ID:          a.GetID(),
+		Secret:      a.GetSecret(),
+		IP:          a.GetIP(),
+		Completed:   false,
+		LastContact: time.Now(), // now is when we last saw this agent
+		ClusterName: a.GetClusterName(),
+		UseExisting: a.GetUseExisting(),
+		Status:      types.StatusPending, // initial status is pending
 	}
 
-	for _, v := range m {
-		agents = append(agents, v)
+	s.agentStore.AddAgent(agent) // we don't actually perform registration here, just add
+
+	return &rpc.RegisterResponse{Success: true}, nil
+}
+
+func (s *Server) GetManifestURL(ctx context.Context, id *rpc.AgentID) (*rpc.ManifestResponse, error) {
+	agent := s.agentStore.GetAgent(id.GetID())
+	resp := &rpc.ManifestResponse{}
+
+	if agent == nil || (agent.Status != types.StatusAccepted) {
+		resp.Success = false
+		resp.URL = ""
+	} else {
+		resp.Success = true
+		resp.URL = agent.ManifestUrl
 	}
 
-	return agents
+	return resp, nil
 }
 
-func (s *Server) RemoveAgent(id string) {
-	delete(s.agents, id)
-	s.removeFromStatusMaps(id)
+func (s *Server) DeleteRule(ctx context.Context, ri *rpc.RuleIndex) (*rpc.DeleteResponse, error) {
+	index := int(ri.Index)
+
+	resp := s.ruleStore.DeleteRule(index)
+
+	return &rpc.DeleteResponse{Success: resp}, nil
 }
 
-func (s *Server) removeFromStatusMaps(id string) {
-	delete(s.held, id)
-	delete(s.accepted, id)
-	delete(s.denied, id)
-	delete(s.pending, id)
-	delete(s.error, id)
+func (s *Server) AddRule(ctx context.Context, r *rpc.Rule) (*rpc.AddResponse, error) {
+	rule := rpcToRule(r)
+
+	resp := s.ruleStore.AddRule(rule)
+
+	return &rpc.AddResponse{Success: resp}, nil
 }
 
-func (s *Server) UpdateAgent(a *agent.Agent) {
-	s.removeFromStatusMaps(a.ID)
-
-	switch a.Status {
-	case agent.StatusHeld:
-		s.held[a.ID] = a
-		break
-	case agent.StatusDenied:
-		s.denied[a.ID] = a
-		break
-	case agent.StatusAccepted:
-		s.accepted[a.ID] = a
-		break
-	case agent.StatusError:
-		s.error[a.ID] = a
-		break
-	case agent.StatusPending:
-		s.pending[a.ID] = a
-		break
+func (s *Server) ListRules(ctx context.Context, e *rpc.Empty) (*rpc.RuleList, error) {
+	ruleList := &rpc.RuleList{
+		Rules: convertRuleSlice(s.ruleStore.ListRules()),
 	}
+
+	return ruleList, nil
 }

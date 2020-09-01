@@ -1,0 +1,91 @@
+syntax = "proto3";
+option go_package = "github.com/ebauman/moo/pkg/rpc";
+// protoc --go_out=plugins=grpc:pkg/rpc --go_opt=paths=source_relative moo.proto
+service Moo {
+  rpc GetAgentStatus(AgentID) returns (StatusResponse) {}
+  rpc RegisterAgent(Agent) returns (RegisterResponse) {}
+  rpc GetManifestURL(AgentID) returns (ManifestResponse) {}
+}
+
+service Rules {
+  rpc ListRules(Empty) returns (RuleList) {}
+  rpc AddRule(Rule) returns (AddResponse) {}
+  rpc DeleteRule(RuleIndex) returns (DeleteResponse) {}
+}
+
+message Empty {
+}
+
+message AgentID {
+  string ID = 1;
+}
+
+enum Status{
+  Unknown = 0; // initial
+  Accepted = 1; // yay!
+  Held = 2; // hold off
+  Denied = 3; // go away
+  Pending = 4; // hang on
+  Error = 5; // uh oh
+}
+
+message StatusResponse {
+  Status Status = 1;
+  string Message = 2;
+  int32 HoldTime = 3;
+  int32 PendingTime = 4;
+  int32 ErrorTime = 5;
+}
+
+message Agent {
+  string ID = 1;
+  string Secret = 2;
+  string IP = 3;
+  string ClusterName = 4;
+  bool UseExisting = 5;
+}
+
+message RegisterResponse {
+  bool Success = 1;
+}
+
+message ManifestResponse {
+  bool Success = 1;
+  string URL = 2;
+}
+
+enum RuleType {
+  SourceIP = 0;
+  SharedSecret = 1;
+  ClusterName = 2;
+  All = 3;
+}
+
+enum RuleAction {
+  Hold = 0;
+  Accept = 1;
+  Deny = 2;
+}
+
+message Rule {
+  RuleType Type = 1;
+  RuleAction Action = 2;
+  int32 Priority = 3;
+  string Regex = 4;
+}
+
+message RuleList {
+  repeated Rule Rules = 1;
+}
+
+message AddResponse {
+  bool Success = 1;
+}
+
+message DeleteResponse {
+  bool Success = 1;
+}
+
+message RuleIndex {
+  int32 Index = 1;
+}
