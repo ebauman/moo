@@ -5,12 +5,21 @@ service Moo {
   rpc GetAgentStatus(AgentID) returns (StatusResponse) {}
   rpc RegisterAgent(Agent) returns (RegisterResponse) {}
   rpc GetManifestURL(AgentID) returns (ManifestResponse) {}
+  rpc ListAgents(ListRequest) returns (AgentListResponse) {}
 }
 
 service Rules {
   rpc ListRules(Empty) returns (RuleList) {}
   rpc AddRule(Rule) returns (AddResponse) {}
   rpc DeleteRule(RuleIndex) returns (DeleteResponse) {}
+}
+
+message AgentListResponse {
+  repeated Agent Agents = 1;
+}
+
+message ListRequest {
+  Status Status = 1;
 }
 
 message Empty {
