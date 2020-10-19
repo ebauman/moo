@@ -1,0 +1,10 @@
+#!/bin/bash
+
+rm *.pem
+
+# generate CA certificate
+openssl req -x509 -newkey rsa:4096 -days 365 -nodes -keyout ca-key.pem -out ca-cert.pem -subj "/C=US/ST=California/L=Cupertino/O=Rancher Labs/OU=Field Engineering/CN=*.moo.test"
+
+openssl req -newkey rsa:4096 -nodes -keyout server-key.pem -out server-req.pem -subj "/C=US/ST=California/L=Cupertino/O=Rancher Labs/OU=Field Engineering/CN=*.moo.test"
+
+openssl x509 -req -in server-req.pem -days 365 -CA ca-cert.pem -CAkey ca-key.pem -CAcreateserial -out server-cert.pem -extfile server-ext.cnf

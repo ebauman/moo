@@ -9,6 +9,8 @@ type AgentConfig struct {
 
 	ServerHostname string
 
+	CACerts string
+
 	CattleConfig
 	RancherConfig
 }
@@ -29,6 +31,8 @@ type RancherConfig struct {
 
 type ServerConfig struct {
 	RancherConfig
+	TLSCert     string
+	TLSKey      string
 	HoldTime    int32
 	PendingTime int32
 	ErrorTime   int32

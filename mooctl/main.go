@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/ebauman/moo/mooctl/cmd/agent"
 	"github.com/ebauman/moo/mooctl/cmd/rule"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
@@ -22,18 +23,14 @@ func main() {
 				Usage: "insecure connection to moo server",
 				EnvVars: []string{"MOO_SERVER_INSECURE"},
 			},
+			&cli.StringFlag{
+				Name: "cacerts",
+				Usage: "path to file containing ca certificate(s) (PEM format)",
+				EnvVars: []string{"MOO_SERVER_CACERTS"},
+			},
 		},
 		Commands: []*cli.Command{
-			{
-				Name: "agent",
-				Usage: "options for agents",
-				Subcommands: []*cli.Command{
-					{
-						Name: "list",
-						Usage: "list agents",
-					},
-				},
-			},
+			agent.LoadCommand(),
 			rule.LoadCommand(),
 		},
 	}

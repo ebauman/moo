@@ -74,7 +74,11 @@ func (s *Server) applyRules() {
 	s.log.Tracef("listed rules, quantity %d", len(rules))
 
 	for _, a := range pending {
-		for _, r := range rules {
+		if len(rules) < 0 {
+			a.StatusMessage = fmt.Sprintf("held, no rules to evaluate")
+			s.agentStore.UpdateAgent(a)
+		}
+		for i, r := range rules {
 			// if rule applies, then perform action
 			if s.evalRule(a, r) {
 				s.log.Tracef("rule match found, updating agent status to %s", r.Action)
@@ -86,6 +90,7 @@ func (s *Server) applyRules() {
 				case types.Deny:
 					a.Status = types.StatusDenied
 				}
+				a.StatusMessage = fmt.Sprintf("%s per rule index %d (type: %s)", a.Status, i, r.Type)
 				s.agentStore.UpdateAgent(a)
 				break
 			}
@@ -126,25 +131,6 @@ func (s *Server) registerAgent(a *types.Agent) error {
 	return nil
 }
 
-func convertRpcStatus(s types.Status) rpc.Status {
-	switch s {
-	case types.StatusUnknown:
-		return rpc.Status_Unknown
-	case types.StatusError:
-		return rpc.Status_Error
-	case types.StatusAccepted:
-		return rpc.Status_Accepted
-	case types.StatusDenied:
-		return rpc.Status_Denied
-	case types.StatusHeld:
-		return rpc.Status_Held
-	case types.StatusPending:
-		return rpc.Status_Pending
-	default:
-		return rpc.Status_Unknown
-	}
-}
-
 func (s *Server) GetAgentStatus(ctx context.Context, id *rpc.AgentID) (*rpc.StatusResponse, error) {
 	agent := s.agentStore.GetAgent(id.GetID())
 
@@ -154,7 +140,7 @@ func (s *Server) GetAgentStatus(ctx context.Context, id *rpc.AgentID) (*rpc.Stat
 		resp.Status = rpc.Status_Unknown
 		resp.Message = ""
 	} else {
-		resp.Status = convertRpcStatus(agent.Status)
+		resp.Status = statusToRPC(agent.Status)
 		resp.Message = agent.StatusMessage
 	}
 
@@ -197,6 +183,20 @@ func (s *Server) GetManifestURL(ctx context.Context, id *rpc.AgentID) (*rpc.Mani
 	return resp, nil
 }
 
+func (s *Server) ListAgents(ctx context.Context, request *rpc.ListRequest) (*rpc.AgentListResponse, error) {
+	status := statusFromRPC(request.Status)
+
+	agents := s.agentStore.ListAgentsByStatus(status)
+
+	convertedAgents := make([]*rpc.Agent, len(agents))
+	for i, v := range agents {
+		vv := agentToRPC(*v)
+		convertedAgents[i] = vv
+	}
+
+	return &rpc.AgentListResponse{Agents: convertedAgents}, nil
+}
+
 func (s *Server) DeleteRule(ctx context.Context, ri *rpc.RuleIndex) (*rpc.DeleteResponse, error) {
 	index := int(ri.Index)
 
@@ -206,7 +206,7 @@ func (s *Server) DeleteRule(ctx context.Context, ri *rpc.RuleIndex) (*rpc.Delete
 }
 
 func (s *Server) AddRule(ctx context.Context, r *rpc.Rule) (*rpc.AddResponse, error) {
-	rule := rpcToRule(r)
+	rule := ruleToRPC(r)
 
 	resp := s.ruleStore.AddRule(rule)
 

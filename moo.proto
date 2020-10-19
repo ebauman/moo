@@ -50,8 +50,13 @@ message Agent {
   string ID = 1;
   string Secret = 2;
   string IP = 3;
-  string ClusterName = 4;
-  bool UseExisting = 5;
+  Status Status = 4;
+  string ManifestUrl = 5;
+  string StatusMessage = 6;
+  bool completed = 7;
+  string LastContact = 8;
+  string ClusterName = 9;
+  bool UseExisting = 10;
 }
 
 message RegisterResponse {

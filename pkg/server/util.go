@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/ebauman/moo/pkg/rpc"
 	"github.com/ebauman/moo/pkg/types"
+	"time"
 )
 
 func convertRuleSlice(rules []types.Rule) []*rpc.Rule {
@@ -57,7 +58,7 @@ func ruleActionToRpc(ruleAction types.RuleAction) rpc.RuleAction {
 	return ra
 }
 
-func rpcToRuleType(rt rpc.RuleType) types.RuleType {
+func ruleTypeFromRPC(rt rpc.RuleType) types.RuleType {
 	var ruleType types.RuleType
 	switch rt {
 	case rpc.RuleType_All:
@@ -73,7 +74,7 @@ func rpcToRuleType(rt rpc.RuleType) types.RuleType {
 	return ruleType
 }
 
-func rpcToRuleAction(ra rpc.RuleAction) types.RuleAction {
+func ruleActionFromRPC(ra rpc.RuleAction) types.RuleAction {
 	var ruleAction types.RuleAction
 	switch ra {
 	case rpc.RuleAction_Accept:
@@ -87,13 +88,84 @@ func rpcToRuleAction(ra rpc.RuleAction) types.RuleAction {
 	return ruleAction
 }
 
-func rpcToRule(r *rpc.Rule) types.Rule {
+func ruleToRPC(r *rpc.Rule) types.Rule {
 	rule := types.Rule{
-		Type:     rpcToRuleType(r.Type),
-		Action:   rpcToRuleAction(r.Action),
+		Type:     ruleTypeFromRPC(r.Type),
+		Action:   ruleActionFromRPC(r.Action),
 		Priority: r.Priority,
 		Regex:    r.Regex,
 	}
 
 	return rule
+}
+
+func statusFromRPC(s rpc.Status) types.Status {
+	switch s {
+	case rpc.Status_Error:
+		return types.StatusError
+	case rpc.Status_Pending:
+		return types.StatusPending
+	case rpc.Status_Denied:
+		return types.StatusDenied
+	case rpc.Status_Held:
+		return types.StatusAccepted
+	case rpc.Status_Accepted:
+		return types.StatusAccepted
+	case rpc.Status_Unknown:
+		return types.StatusUnknown
+	default:
+		return types.StatusUnknown
+	}
+}
+
+func statusToRPC(s types.Status) rpc.Status {
+	switch s {
+	case types.StatusUnknown:
+		return rpc.Status_Unknown
+	case types.StatusError:
+		return rpc.Status_Error
+	case types.StatusAccepted:
+		return rpc.Status_Accepted
+	case types.StatusDenied:
+		return rpc.Status_Denied
+	case types.StatusHeld:
+		return rpc.Status_Held
+	case types.StatusPending:
+		return rpc.Status_Pending
+	default:
+		return rpc.Status_Unknown
+	}
+}
+
+func agentFromRPC(req *rpc.Agent) types.Agent {
+	var lastContext time.Time
+	lastContext.UnmarshalText([]byte(req.LastContact))
+	return types.Agent{
+		ID:            req.ID,
+		Secret:        req.Secret,
+		IP:            req.IP,
+		Status:        statusFromRPC(req.Status),
+		ManifestUrl:   req.ManifestUrl,
+		StatusMessage: req.StatusMessage,
+		Completed:     req.Completed,
+		LastContact:   lastContext,
+		ClusterName:   req.ClusterName,
+		UseExisting:   req.UseExisting,
+	}
+}
+
+func agentToRPC(req types.Agent) *rpc.Agent {
+	lastContact, _ := req.LastContact.MarshalText()
+	return &rpc.Agent{
+		ID:            req.ID,
+		Secret:        req.Secret,
+		IP:            req.IP,
+		Status:        statusToRPC(req.Status),
+		ManifestUrl:   req.ManifestUrl,
+		StatusMessage: req.StatusMessage,
+		Completed:     req.Completed,
+		LastContact:   string(lastContact),
+		ClusterName:   req.ClusterName,
+		UseExisting:   req.UseExisting,
+	}
 }

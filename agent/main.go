@@ -11,7 +11,6 @@ import (
 	"github.com/ebauman/moo/pkg/rpc"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
-	"google.golang.org/grpc"
 	"os"
 )
 
@@ -84,6 +83,17 @@ func main() {
 				Value: "",
 				EnvVars: []string{"MOO_SERVER"},
 			},
+			&cli.BoolFlag{
+				Name: "moo-insecure",
+				Usage: "connect to the moo server insecurely",
+				Value: false,
+				EnvVars: []string{"MOO_INSECURE"},
+			},
+			&cli.StringFlag{
+				Name: "moo-cacerts",
+				Usage: "path to file containing ca certificate(s) for the moo server (PEM format)",
+				EnvVars: []string{"MOO_SERVER_CACERTS"},
+			},
 			&cli.StringFlag {
 				Name: "loglevel",
 				Usage: "log level (trace, debug, info, warning, error, fatal, panic)",
@@ -130,10 +140,11 @@ func buildConfigFromFlags(ctx *cli.Context) *config.AgentConfig {
 	cfg.AccessKey = ctx.String("rancher-access-key")
 	cfg.SecretKey = ctx.String("rancher-secret-key")
 	cfg.ClusterName = ctx.String("cluster-name")
-	cfg.CACerts = ctx.String("rancher-cacerts")
+	cfg.RancherConfig.CACerts = ctx.String("rancher-cacerts")
 	cfg.Insecure = ctx.Bool("rancher-insecure")
 	cfg.UseExisting = ctx.Bool("use-existing-cluster")
 	cfg.ServerHostname = ctx.String("moo-server")
+	cfg.CACerts = ctx.String("moo-cacerts")
 
 	return cfg
 }
@@ -156,14 +167,10 @@ func run(ctx *cli.Context) error {
 
 	var ag *agent.Agent
 	if cfg.ServerHostname != "" {
-		// running in server mode
-		conn, err := grpc.Dial(cfg.ServerHostname, grpc.WithInsecure()) // TODO - figure out authentication
+		mooClient, err := rpc.SetupMooClient(cfg.ServerHostname, cfg.Insecure, cfg.CACerts)
 		if err != nil {
-			logger.Fatalf("error dialing moo server: %v", err)
+			logger.Fatalf("error building moo client: %v", err)
 		}
-		defer conn.Close()
-
-		mooClient := rpc.NewMooClient(conn)
 
 		ag = agent.NewServerAgent(cfg, k8sClient, mooClient, appContext, logger)
 

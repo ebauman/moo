@@ -56,7 +56,7 @@ func LoadCommand() *cli.Command {
 }
 
 func createRule(c *cli.Context) error {
-	_, rulesClient, err := rpc.SetupClients(c.String("server"), c.Bool("insecure"))
+	_, rulesClient, err := rpc.SetupClients(c.String("server"), c.Bool("insecure"), c.String("cacerts"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func createRule(c *cli.Context) error {
 }
 
 func deleteRule(c *cli.Context) error {
-	_, rulesClient, err := rpc.SetupClients(c.String("server"), c.Bool("insecure"))
+	_, rulesClient, err := rpc.SetupClients(c.String("server"), c.Bool("insecure"), c.String("cacerts"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func deleteRule(c *cli.Context) error {
 }
 
 func listRules(c *cli.Context) error {
-	_, rulesClient, err := rpc.SetupClients(c.String("server"), c.Bool("insecure"))
+	_, rulesClient, err := rpc.SetupClients(c.String("server"), c.Bool("insecure"), c.String("cacerts"))
 	if err != nil {
 		log.Fatal(err)
 	}

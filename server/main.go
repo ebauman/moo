@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"github.com/ebauman/moo/pkg/config"
 	mooLogger "github.com/ebauman/moo/pkg/logger"
 	"github.com/ebauman/moo/pkg/rancher"
@@ -8,6 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"net"
 	"os"
 	"sync"
@@ -74,6 +76,18 @@ func main() {
 				Value: "info",
 				EnvVars: []string{"LOGLEVEL"},
 			},
+			&cli.StringFlag{
+				Name: "tls-cert",
+				Required: true,
+				Usage: "path to certificate file to secure client communications",
+				EnvVars: []string{"MOO_TLS_CERT"},
+			},
+			&cli.StringFlag{
+				Name: "tls-key",
+				Required: true,
+				Usage: "path to key file to secure client communications",
+				EnvVars: []string{"MOO_TLS_KEY"},
+			},
 		},
 	}
 
@@ -105,8 +119,24 @@ func buildConfigFromFlags(ctx *cli.Context) *config.ServerConfig {
 	cfg.HoldTime = int32(ctx.Int("hold-time"))
 	cfg.PendingTime = int32(ctx.Int("pending-time"))
 	cfg.ErrorTime = int32(ctx.Int("error-time"))
+	cfg.TLSCert = ctx.String("tls-cert")
+	cfg.TLSKey = ctx.String("tls-key")
 
 	return cfg
+}
+
+func loadTLSCredentials(certPath string, keyPath string) (credentials.TransportCredentials, error) {
+	serverCert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth: tls.NoClientCert,
+	}
+
+	return credentials.NewTLS(cfg), nil
 }
 
 func run(ctx *cli.Context) error {
@@ -118,7 +148,12 @@ func run(ctx *cli.Context) error {
 		logger.Fatalf("error building rancher server: %v", err)
 	}
 
-	rpc := grpc.NewServer()
+	tlsCreds, err := loadTLSCredentials(cfg.TLSCert, cfg.TLSKey)
+	if err != nil {
+		logger.Fatalf("error loading tls credentials: ", err)
+	}
+
+	rpc := grpc.NewServer(grpc.Creds(tlsCreds))
 
 	server := mooServer.NewServer(cfg, r, logger, rpc)
 
