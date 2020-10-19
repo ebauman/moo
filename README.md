@@ -1,3 +1,12 @@
+![Maintenance](https://img.shields.io/badge/maintained-no-red.svg)
+
+This project is no longer being maintained. For an alternative, please see https://github.com/rancher/fleet, 
+especially agent self-registration. 
+
+If you have interest in maintaining this, or a use case for it, please open an issue. 
+
+Server, agent, mooctl functionality is not guaranteed. This was heavily a work-in-progress at time of maintenance cessation. 
+
 # Moo
 
 Moo is a tool to auto-register Kubernetes (or k3s) clusters with a Rancher instance.
